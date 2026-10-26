@@ -117,6 +117,8 @@ tbody tr:hover td{background:var(--brand-soft)}
 .tot{display:block;font-weight:600}
 td .punch{display:block;font-size:11px;color:var(--muted)}
 .tag{display:inline-block;margin-top:4px;margin-right:4px;font-size:11px;font-weight:600;border-radius:4px;padding:1px 6px;white-space:nowrap}
+.tag.oc{background:var(--live-soft);color:var(--live)}
+.tag.oc.booked{color:var(--live);border-color:var(--live)}
 .tag.vac{background:var(--brand-soft);color:var(--brand)}
 .tag.np{background:var(--warn-soft);color:var(--warn)}
 .tag.hol{background:var(--accent-soft);color:var(--accent-ink)}
@@ -183,7 +185,7 @@ td.total .bar{margin-left:auto;margin-right:auto;max-width:90px}
     </table>
   </div>
 
-  <p class="foot">Daily totals update automatically at 8:15 AM and 2:15 PM from the ServiceTitan Timesheet Report. Start, end, lunch and time off come from the Technician Timesheet Summary: run it for all employees in ServiceTitan, export to Excel, and use <b>Import timesheet</b>. Each day shows whichever report is newest. Totals count paid hours, vacation included; booked time later in the week is shown but not counted until it happens.</p>
+  <p class="foot">Daily totals update automatically at 8:15 AM and 2:15 PM from the ServiceTitan Timesheet Report. Start, end, lunch and time off come from the Technician Timesheet Summary: run it for all employees in ServiceTitan, export to Excel, and use <b>Import timesheet</b>. Each day shows whichever report is newest. Non-PTO blocks of 90 minutes or less are the on-call holds dispatch adds so Scheduling Pro skips on-call techs until 9 AM; they show as "On call" and don't count as time off. Totals count paid hours, vacation included; booked time later in the week is shown but not counted until it happens.</p>
 </div>
 
 <div class="modalbg" id="modal" hidden>
@@ -228,6 +230,10 @@ function deptOf(...vals){
     if(/elec/.test(u)) return "Electrical"; if(/hvac|heat|cool|air|furnace/.test(u)) return "HVAC"; }
   return "Other";
 }
+// On-call holds: dispatch puts a short Non-PTO block (7:30-9:00) on on-call techs so Scheduling Pro skips them until 9. Treat 90 min or less as on call, not time off.
+const ONCALL_MAX=90;
+function onCall(r){ return r.nonpto>0&&r.nonpto<=ONCALL_MAX; }
+function np(r){ return onCall(r)?0:r.nonpto; }
 function esc(s){ return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
 function timeLabel(t){ const d=new Date(t); return d.toLocaleDateString(undefined,{weekday:"short",month:"short",day:"numeric"})+", "+d.toLocaleTimeString(undefined,{hour:"numeric",minute:"2-digit"}); }
 function etDate(t){ return new Date(t).toLocaleDateString("en-CA",{timeZone:"America/New_York"}); }
@@ -362,7 +368,7 @@ function buildView(){
       D.rows.filter(r=>r.date===k).forEach(r=>{ const p=touch(r.name,r.id); p.days[k]={...r,src:"booked"}; });
     }
   });
-  if(D) D.rows.forEach(r=>{ const p=touch(r.name,r.id); if(r.booked){ p.bvac+=r.vac; p.bnonpto+=r.nonpto; p.bhol+=r.hol; } else { p.vac+=r.vac; p.nonpto+=r.nonpto; p.hol+=r.hol; } });
+  if(D) D.rows.forEach(r=>{ const p=touch(r.name,r.id); if(r.booked){ p.bvac+=r.vac; p.bnonpto+=np(r); p.bhol+=r.hol; } else { p.vac+=r.vac; p.nonpto+=np(r); p.hol+=r.hol; } if(onCall(r)) p.oncall=(p.oncall||0)+1; });
   // clocked in: from the newest report covering the latest day with hours
   const liveDay=keys.filter(k=>src[k]==="detail"||src[k]==="daily").pop();
   let live={known:false};
@@ -380,7 +386,7 @@ function buildView(){
 
 /* ---------- render ---------- */
 function showBanner(msg,kind){ const b=$("banner"); b.textContent=msg; b.dataset.kind=kind||""; b.hidden=!msg; }
-function tagHtml(r,booked){ const t=[]; if(r.vac) t.push(["vac","PTO "+short(r.vac)]); if(r.nonpto) t.push(["np","Non-PTO "+short(r.nonpto)]); if(r.hol) t.push(["hol","Holiday "+short(r.hol)]);
+function tagHtml(r,booked){ const t=[]; if(onCall(r)) t.push(["oc","On call"]); if(r.vac) t.push(["vac","PTO "+short(r.vac)]); if(np(r)) t.push(["np","Non-PTO "+short(np(r))]); if(r.hol) t.push(["hol","Holiday "+short(r.hol)]);
   return t.map(([c,x])=>`<span class="tag ${c}${booked?" booked":""}">${x}${booked?" · booked":""}</span>`).join(""); }
 function cellHtml(c,open){
   if(!c) return `<td class="empty">–</td>`;
@@ -388,7 +394,7 @@ function cellHtml(c,open){
   if(c.src==="daily") return `<td>${c.hw?`<span class="tot">${fmt(c.hw)}</span>`:""}${c.tags?tagHtml(c.tags,true):""}</td>`;
   const span=c.start?`<span class="punch">${t12(c.start)} – ${open?"now":t12(c.end)}</span>`:"";
   const lunch=c.start?`<span class="punch">${c.meal?"Lunch "+short(c.meal):"No lunch"}</span>`:"";
-  return `<td class="${open?"open":""}"><span class="tot">${fmt(c.hw)}</span>${open?'<span class="note">(still clocked in)</span>':""}${span}${lunch}${tagHtml(c,false)}</td>`;
+  return `<td class="${open?"open":""}">${c.hw||c.start?`<span class="tot">${fmt(c.hw)}</span>`:""}${open?'<span class="note">(still clocked in)</span>':""}${span}${lunch}${tagHtml(c,false)}</td>`;
 }
 function offCell(n,b){ return `<td class="off">${n||b?`${n?short(n):"0h"}${b?`<span class="bk">+${short(b)} booked</span>`:""}`:'<span class="empty">–</span>'}</td>`; }
 function render(){
