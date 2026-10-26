@@ -251,7 +251,7 @@ function onCall(r){ if(!(r.nonpto>0&&r.nonpto<=ONCALL_MAX)) return false;
   return tmin(r.start)>=8*60+30; }
 function np(r){ return onCall(r)?0:r.nonpto; }
 // Time off the clock between start and end that isn't a logged meal (e.g. clocked out for lunch). Only on plain work days.
-function offClock(c){ if(!c.start||!c.end||c.vac||c.nonpto||c.hol) return 0; const g=tmin(c.end)-tmin(c.start)-c.hw-c.meal; return g>=10?g:0; }
+function offClock(c){ if(!c.start||!c.end||c.vac||c.nonpto||c.hol) return 0; const g=tmin(c.end)-tmin(c.start)-(c.baseHw??c.hw)-c.meal; return g>=10?g:0; }
 const LUNCH_FROM=11*60+30, LUNCH_TO=13*60; // clock-outs in this window today read as "Out – lunch?"
 function esc(s){ return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
 function timeLabel(t){ const d=new Date(t); return d.toLocaleDateString(undefined,{weekday:"short",month:"short",day:"numeric"})+", "+d.toLocaleTimeString(undefined,{hour:"numeric",minute:"2-digit"}); }
@@ -411,7 +411,7 @@ function buildView(){
     const from=src[liveDay]==="detail"?etToMs(D.run_date,D.run_time):new Date(byDay[liveDay][0].captured_at).getTime();
     const endOfDay=etToMs(liveDay,"23:59");
     const extra=Math.max(0,Math.floor((Math.min(Date.now(),endOfDay)-from)/60000));
-    if(extra>0){ live.extra=extra; people.forEach(p=>{ if(!p.open) return; const c=p.days[liveDay]; if(!c) return; p.days[liveDay]={...c,hw:c.hw+extra,live:true}; p.total+=extra; p.live=true; }); }
+    if(extra>0){ live.extra=extra; people.forEach(p=>{ if(!p.open) return; const c=p.days[liveDay]; if(!c) return; p.days[liveDay]={...c,hw:c.hw+extra,live:true,baseHw:c.hw}; p.total+=extra; p.live=true; }); }
   }
   const newest=[D,...Object.values(byDay).map(a=>a[0])].filter(Boolean).sort((a,b)=>b.captured_at.localeCompare(a.captured_at))[0];
   return {days,keys,live,liveDay,hasDetail:!!D,D,newest,people:[...people.values()].filter(p=>p.total>0||p.open||p.vac||p.nonpto||p.hol||p.bvac||p.bnonpto||p.bhol)};
