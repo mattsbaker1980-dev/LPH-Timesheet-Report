@@ -487,11 +487,28 @@ $("nextWk").onclick=async()=>{ if(weekIdx<weeks.length-1){ weekIdx++; render(); 
 function tickClock(){ const n=new Date(); $("clock").textContent=n.toLocaleTimeString("en-US",{timeZone:"America/New_York",hour:"numeric",minute:"2-digit",second:"2-digit"})+" ET · "+n.toLocaleDateString("en-US",{timeZone:"America/New_York",weekday:"short",month:"short",day:"numeric"}); }
 tickClock(); setInterval(tickClock,1000);
 setInterval(()=>{ if(!document.hidden&&$("modal").hidden&&weekIdx>=0) render(); },30000);
+// pick up new reports without a manual refresh: re-check the data every 5 minutes and when the tab comes back into view
+let lastIndex="";
+async function refreshData(){
+  if(weekIdx<0||!$("modal").hidden) return;
+  try{
+    const r=await fetch("data/index.json?v="+Date.now(),{cache:"no-store"}); if(!r.ok) return;
+    const txt=await r.text(); if(txt===lastIndex) return; lastIndex=txt;
+    const idx=JSON.parse(txt), list=(idx.weeks||[]).slice().sort(), viewing=weeks[weekIdx], wasLatest=weekIdx===weeks.length-1;
+    weeks=list; const cur=weeks[weeks.length-1];
+    delete cache[cur]; if(viewing&&viewing!==cur) delete cache[viewing];
+    await loadWeek(weeks.length-1); if(viewing&&viewing!==cur) await loadWeek(weeks.indexOf(viewing)).catch(()=>{});
+    weekIdx=wasLatest?weeks.length-1:Math.max(0,weeks.indexOf(viewing));
+    render();
+  }catch(e){}
+}
+setInterval(()=>{ if(!document.hidden) refreshData(); },5*60*1000);
+document.addEventListener("visibilitychange",()=>{ if(!document.hidden) refreshData(); });
 document.addEventListener("keydown",e=>{ if(e.key==="Escape"&&!$("modal").hidden) $("mCancel").click(); });
 (async()=>{
   try{
     const r=await fetch("data/index.json?v="+Date.now()); if(!r.ok) throw new Error("index");
-    weeks=((await r.json()).weeks||[]).slice().sort();
+    lastIndex=await r.text(); weeks=(JSON.parse(lastIndex).weeks||[]).slice().sort();
     if(!weeks.length){ render(); showBanner("No hours loaded yet. Daily totals arrive with the 8:15 AM and 2:15 PM updates, or use Import timesheet."); return; }
     weekIdx=weeks.length-1; await loadWeek(weekIdx); render(); await loadAll(); render();
   }catch(e){ showBanner("The hours data couldn't load. Refresh the page; if it keeps happening, the daily update may have failed.","error"); }
