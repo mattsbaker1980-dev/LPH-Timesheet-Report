@@ -160,6 +160,15 @@ th,td{padding:9px 10px}
 #thead th:nth-child(n+2):nth-child(-n+8),#tbody td:nth-child(n+2):nth-child(-n+8){width:11%;min-width:104px}
 td .punch,.tot,td.open .note{text-align:center}
 td.total .bar{margin-left:auto;margin-right:auto;max-width:90px}
+
+/* header: big logo left, title centered on the page, controls right */
+.brandbar{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:16px 24px}
+.brandbar .brandleft{display:contents}
+.brandbar .logo{justify-self:start}
+.brandbar .logo img{height:110px;width:auto}
+.brandbar .titles{border-left:0;padding-left:0;text-align:center;justify-self:center}
+.brandbar .controls{justify-self:end;justify-content:flex-end}
+@media (max-width:1100px){.brandbar{grid-template-columns:1fr;justify-items:center}.brandbar .logo,.brandbar .controls{justify-self:center}.brandbar .controls{justify-content:center}.brandbar .logo img{height:90px}}
 </style>
 <div class="wrap">
   <header class="brandbar">
