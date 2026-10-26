@@ -122,6 +122,8 @@ td .punch{display:block;font-size:11px;color:var(--muted)}
 .sortbtn:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
 .sortbtn:hover{color:var(--accent-ink)}
 .sortbtn .arr{font-size:9px;line-height:1;min-height:9px;color:var(--accent)}
+.clock{margin-top:6px;font-family:var(--font-display);font-size:20px;color:var(--brand);font-variant-numeric:tabular-nums;letter-spacing:.02em}
+.livetag{display:inline-block;margin-left:5px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--live);border:1px solid var(--live);border-radius:3px;padding:0 3px;vertical-align:2px}
 .tot.bottom{margin-top:4px}
 .flag.out{color:var(--crit);background:var(--crit-soft)}
 .flag.out::before{background:var(--crit);animation:none}
@@ -164,6 +166,7 @@ td.total .bar{margin-left:auto;margin-right:auto;max-width:90px}
       <div class="titles">
         <h1>Timesheet Report</h1>
         <div class="sub" id="sub">Hours per day, Monday through Sunday</div>
+        <div class="clock" id="clock" aria-live="off"></div>
       </div>
     </div>
     <div class="controls">
@@ -247,6 +250,12 @@ function onCall(r){ if(!(r.nonpto>0&&r.nonpto<=ONCALL_MAX)) return false;
 function np(r){ return onCall(r)?0:r.nonpto; }
 function esc(s){ return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
 function timeLabel(t){ const d=new Date(t); return d.toLocaleDateString(undefined,{weekday:"short",month:"short",day:"numeric"})+", "+d.toLocaleTimeString(undefined,{hour:"numeric",minute:"2-digit"}); }
+function etToMs(dateStr,hm){ // wall-clock time in Eastern -> epoch ms
+  const [y,mo,d]=dateStr.split("-").map(Number), [hh,mi]=hm.split(":").map(Number);
+  const guess=Date.UTC(y,mo-1,d,hh,mi);
+  const asET=new Date(new Date(guess).toLocaleString("en-US",{timeZone:"America/New_York"}));
+  const asUTC=new Date(new Date(guess).toLocaleString("en-US",{timeZone:"UTC"}));
+  return guess+(asUTC-asET); }
 function etDate(t){ return new Date(t).toLocaleDateString("en-CA",{timeZone:"America/New_York"}); }
 function store(k,v){ try{ v==null?localStorage.removeItem(k):localStorage.setItem(k,v); }catch(e){} }
 function load(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
@@ -391,6 +400,14 @@ function buildView(){
     if(s0&&el>0&&el<=120){ const before=new Map(s0.employees.map(e=>[e.name,e.min])); const up=s1.employees.filter(e=>e.min-(before.get(e.name)??e.min)>=2);
       if(up.length){ live={known:true,label:new Date(s1.captured_at).toLocaleTimeString(undefined,{hour:"numeric",minute:"2-digit"})}; up.forEach(e=>{ const p=people.get(e.name); if(p) p.open=true; }); } }
   }
+  // live estimate: keep counting for anyone still clocked in, from the last report to now (today only)
+  const todayET=etDate(Date.now());
+  if(live.known&&liveDay===todayET){
+    const from=src[liveDay]==="detail"?etToMs(D.run_date,D.run_time):new Date(byDay[liveDay][0].captured_at).getTime();
+    const endOfDay=etToMs(liveDay,"23:59");
+    const extra=Math.max(0,Math.floor((Math.min(Date.now(),endOfDay)-from)/60000));
+    if(extra>0){ live.extra=extra; people.forEach(p=>{ if(!p.open) return; const c=p.days[liveDay]; if(!c) return; p.days[liveDay]={...c,hw:c.hw+extra,live:true}; p.total+=extra; p.live=true; }); }
+  }
   const newest=[D,...Object.values(byDay).map(a=>a[0])].filter(Boolean).sort((a,b)=>b.captured_at.localeCompare(a.captured_at))[0];
   return {days,keys,live,liveDay,hasDetail:!!D,D,newest,people:[...people.values()].filter(p=>p.total>0||p.open||p.vac||p.nonpto||p.hol||p.bvac||p.bnonpto||p.bhol)};
 }
@@ -402,10 +419,10 @@ function tagHtml(r,booked){ const t=[]; if(onCall(r)) t.push(["oc","On call"]); 
 function cellHtml(c,open){
   if(!c) return `<td class="empty">–</td>`;
   if(c.src==="booked"){ const what=c.train?"Training ":(c.hw?"Scheduled ":""); const inner=[c.start&&c.end&&c.hw?`<span class="tag booked">${what}${t12(c.start)}–${t12(c.end)} · booked</span>`:"",tagHtml(c,true)].join(""); return inner?`<td class="bookedcell">${inner}</td>`:`<td class="empty">–</td>`; }
-  if(c.src==="daily") return `<td>${c.hw?`<span class="tot">${fmt(c.hw)}</span>`:""}${c.tags?tagHtml(c.tags,true):""}</td>`;
+  if(c.src==="daily") return `<td>${c.hw?`<span class="tot">${c.live?"~":""}${fmt(c.hw)}${c.live?'<span class="livetag">live</span>':""}</span>`:""}${c.tags?tagHtml(c.tags,true):""}</td>`;
   const span=c.start?`<span class="punch">${t12(c.start)} – ${open?"now":t12(c.end)}</span>`:"";
   const lunch=c.start?`<span class="punch">${c.meal?"Lunch "+short(c.meal):"No lunch"}</span>`:"";
-  return `<td class="${open?"open":""}">${span}${lunch}${tagHtml(c,false)}${c.hw||c.start?`<span class="tot bottom">${fmt(c.hw)}</span>`:""}</td>`;
+  return `<td class="${open?"open":""}">${span}${lunch}${tagHtml(c,false)}${c.hw||c.start?`<span class="tot bottom">${c.live?"~":""}${fmt(c.hw)}${c.live?'<span class="livetag">live</span>':""}</span>`:""}</td>`;
 }
 function offCell(n,b){ return `<td class="off">${n||b?`${n?short(n):"0h"}${b?`<span class="bk">+${short(b)} booked</span>`:""}`:'<span class="empty">–</span>'}</td>`; }
 function render(){
@@ -425,13 +442,14 @@ function render(){
   const val=p=>sortKey==="total"?p.total:sortKey==="vac"?p.vac+p.bvac:sortKey==="nonpto"?p.nonpto+p.bnonpto:sortKey==="hol"?p.hol+p.bhol:(p.days[sortKey]?.hw||0);
   rows.sort(sortKey==="name"?(a,b)=>sortDir*byName(a,b):(a,b)=>sortDir*(val(a)-val(b))||byName(a,b));
   $("sEmp").textContent=scoped.length;
-  $("sHrs").textContent=fmt(scoped.reduce((a,p)=>a+p.total,0)).replace(/ 00m$/,"");
+  $("sHrs").textContent=(scoped.some(p=>p.live)?"~":"")+fmt(scoped.reduce((a,p)=>a+p.total,0)).replace(/ 00m$/,"");
   $("sLive").textContent=live.known?scoped.filter(p=>p.open).length:"—";
   $("sLiveK").textContent=live.known?"Still clocked in at "+live.label:"Still clocked in";
   $("sOver").textContent=scoped.filter(p=>p.total>=2400).length;
   const notes=[];
   if(!hasDetail) notes.push("Start, end, lunch and time off show up after you import the Technician Timesheet Summary for this week.");
   if(!live.known&&keys.includes(todayKey)) notes.push("Clocked-in status needs either an imported Timesheet Summary from today or the 1:45 and 2:00 PM runs of the Timesheet Report.");
+  if(live.extra) notes.push(`Numbers marked ~ are live estimates: hours for anyone clocked in keep counting from the last report (${live.label}) to now. The next report replaces them with ServiceTitan\'s numbers.`);
   $("note").textContent=notes.join(" "); $("note").hidden=!notes.length;
   const sh=(key,label,cls="")=>{ const on=sortKey===key, arrow=on?(sortDir<0?"▼":"▲"):""; return `<th class="${cls}" aria-sort="${on?(sortDir<0?"descending":"ascending"):"none"}"><button type="button" class="sortbtn" data-sort="${key}">${label}<span class="arr">${arrow}</span></button></th>`; };
   th.innerHTML="<tr>"+sh("name","Employee")+days.map((d,i)=>sh(keys[i],`${DAYS[i]}<span class="d">${d.getMonth()+1}/${d.getDate()}</span>`,keys[i]===todayKey?"today":"")).join("")+sh("total","Week total")+(hasDetail?sh("vac","PTO")+sh("nonpto","Non-PTO")+sh("hol","Holiday"):"")+"</tr>";
@@ -443,7 +461,7 @@ function render(){
     const pct=Math.min(100,p.total/2400*100), cls=p.total>=2400?"over":p.total>=2160?"near":"";
     const left=p.total>=2400?`${fmt(p.total-2400)} over 40`:`${fmt(2400-p.total)} to 40`;
     const sub=p.unit&&p.unit!==p.dept?p.unit:p.dept;
-    return `<tr><td><span class="name">${esc(p.name)}</span>${p.open?'<span class="flag">Clocked in</span>':(live.known&&p.days[v.liveDay]&&(p.days[v.liveDay].hw||p.days[v.liveDay].start)?'<span class="flag out">Clocked out</span>':"")}<span class="dept">${esc(sub)}</span></td>${cells}<td class="total ${cls}">${fmt(p.total)}<span class="to40">${left}</span><span class="bar"><i style="width:${pct}%"></i></span></td>${hasDetail?offCell(p.vac,p.bvac)+offCell(p.nonpto,p.bnonpto)+offCell(p.hol,p.bhol):""}</tr>`;
+    return `<tr><td><span class="name">${esc(p.name)}</span>${p.open?'<span class="flag">Clocked in</span>':(live.known&&p.days[v.liveDay]&&(p.days[v.liveDay].hw||p.days[v.liveDay].start)?'<span class="flag out">Clocked out</span>':"")}<span class="dept">${esc(sub)}</span></td>${cells}<td class="total ${cls}">${p.live?"~":""}${fmt(p.total)}<span class="to40">${left}</span><span class="bar"><i style="width:${pct}%"></i></span></td>${hasDetail?offCell(p.vac,p.bvac)+offCell(p.nonpto,p.bnonpto)+offCell(p.hol,p.bhol):""}</tr>`;
   }).join("");
 }
 
@@ -452,6 +470,9 @@ async function loadWeek(i){ const w=weeks[i]; if(!w||cache[w]) return; const r=a
 async function loadAll(){ await Promise.all(weeks.map((_,i)=>loadWeek(i).catch(()=>{}))); }
 $("prevWk").onclick=async()=>{ if(weekIdx>0){ weekIdx--; render(); } };
 $("nextWk").onclick=async()=>{ if(weekIdx<weeks.length-1){ weekIdx++; render(); } };
+function tickClock(){ const n=new Date(); $("clock").textContent=n.toLocaleTimeString("en-US",{timeZone:"America/New_York",hour:"numeric",minute:"2-digit",second:"2-digit"})+" ET · "+n.toLocaleDateString("en-US",{timeZone:"America/New_York",weekday:"short",month:"short",day:"numeric"}); }
+tickClock(); setInterval(tickClock,1000);
+setInterval(()=>{ if(!document.hidden&&$("modal").hidden&&weekIdx>=0) render(); },30000);
 document.addEventListener("keydown",e=>{ if(e.key==="Escape"&&!$("modal").hidden) $("mCancel").click(); });
 (async()=>{
   try{
