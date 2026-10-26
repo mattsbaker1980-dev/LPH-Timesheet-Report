@@ -234,7 +234,7 @@ td.total .bar{margin-left:auto;margin-right:auto;max-width:90px}
 (function(){
 const REPO="mattsbaker1980-dev/LPH-Timesheet-Report", BRANCH="main";
 const DAYS=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
-const DEPTS=["Plumbing","Sewer","Electrical","HVAC"];
+const DEPTS=["Plumbing","Sewer","Electrical","HVAC Install","HVAC Service"];
 const $=id=>document.getElementById(id);
 let weeks=[], weekIdx=-1, cache={}, dept="All", liveOnly=false, pending=null, sortKey="name", sortDir=1;
 
@@ -378,7 +378,13 @@ $("mSave").onclick=async()=>{
 };
 
 /* ---------- build the week view ---------- */
-function deptMap(){ const m=new Map(); Object.values(cache).flat().filter(s=>s.kind!=="detail").sort((a,b)=>a.captured_at.localeCompare(b.captured_at)).forEach(s=>s.employees.forEach(e=>{ m.set(e.name,{dept:e.dept,unit:e.unit}); if(e.id) m.set("#"+e.id,{dept:e.dept,unit:e.unit}); })); return m; }
+function deptMap(){ const m=new Map(); Object.values(cache).flat().filter(s=>s.kind!=="detail").sort((a,b)=>a.captured_at.localeCompare(b.captured_at)).forEach(s=>s.employees.forEach(e=>{ const v={dept:e.dept,unit:e.unit,team:e.team}; m.set(e.name,v); if(e.id) m.set("#"+e.id,v); })); return m; }
+// Page departments: HVAC splits into Install / Service by business unit (or team); no trade = Warehouse; not in the tech report = Office
+function pageDept(dept,unit,team){
+  if(dept==="HVAC") return /install/i.test((unit||"")+" "+(team||""))?"HVAC Install":"HVAC Service";
+  if(dept==="Other") return "Warehouse";
+  return dept||"Office";
+}
 function buildView(){
   if(weekIdx<0) return null;
   const pool=cache[weeks[weekIdx]]||[];
@@ -388,39 +394,55 @@ function buildView(){
   const byDay={};
   pool.filter(s=>s.kind!=="detail"&&s.range_start===s.range_end&&keys.includes(s.range_start)).sort((a,b)=>b.captured_at.localeCompare(a.captured_at)).forEach(s=>(byDay[s.range_start]=byDay[s.range_start]||[]).push(s));
   const D=pool.filter(s=>s.kind==="detail").sort((a,b)=>b.captured_at.localeCompare(a.captured_at))[0]||null;
+  const dTime=D&&D.run_time?etToMs(D.run_date,D.run_time):(D?new Date(D.captured_at).getTime():0);
   const dm=deptMap(), people=new Map();
-  const touch=(name,id,unit,dpt)=>{ if(!people.has(name)){ const k=dm.get(name)||(id&&dm.get("#"+id)); people.set(name,{name,dept:dpt||k?.dept||"Office",unit:unit||k?.unit||"",days:{},total:0,open:false,vac:0,nonpto:0,hol:0,bvac:0,bnonpto:0,bhol:0}); } return people.get(name); };
+  const touch=(name,id,unit,dpt,team)=>{ if(!people.has(name)){ const k=dm.get(name)||(id&&dm.get("#"+id));
+      people.set(name,{name,dept:pageDept(dpt||k?.dept,unit||k?.unit,team||k?.team),unit:unit||k?.unit||"",days:{},total:0,open:false,vac:0,nonpto:0,hol:0,bvac:0,bnonpto:0,bhol:0}); } return people.get(name); };
   const src={};
   keys.forEach(k=>{
-    const dly=byDay[k]?.[0];
-    if(D&&k<=D.run_date&&(!dly||D.captured_at>=dly.captured_at)){ src[k]="detail";
-      D.rows.filter(r=>r.date===k).forEach(r=>{ const p=touch(r.name,r.id); p.days[k]={...r,src:"detail"}; p.total+=r.hw; });
+    const dly=byDay[k]?.[0], dRows=D&&k<=D.run_date?D.rows.filter(r=>r.date===k):null;
+    const dlyNewer=dly&&new Date(dly.captured_at).getTime()>dTime;
+    if(dRows&&(k<D.run_date||!dlyNewer)){ src[k]="detail";
+      dRows.forEach(r=>{ const p=touch(r.name,r.id); p.days[k]={...r,src:"detail"}; p.total+=r.hw; });
+    }else if(dRows&&dlyNewer){ src[k]="merged";
+      // a newer scheduled report on the import day: take its totals, keep start time, lunch and time off from the import
+      const byName=new Map(dRows.map(r=>[r.name,r]));
+      dly.employees.forEach(e=>{ const r=byName.get(e.name); if(!e.min&&!r) return; const p=touch(e.name,e.id,e.unit,e.dept,e.team);
+        p.days[k]=r?{...r,src:"detail",hw:Math.max(e.min,r.hw),detailHw:r.hw,baseHw:r.hw,endUnknown:e.min!==r.hw,laterT:new Date(dly.captured_at).getTime()}:{src:"daily",hw:e.min}; p.total+=p.days[k].hw; byName.delete(e.name); });
+      byName.forEach(r=>{ const p=touch(r.name,r.id); p.days[k]={...r,src:"detail"}; p.total+=r.hw; });
     }else if(dly){ src[k]="daily";
-      dly.employees.forEach(e=>{ if(!e.min) return; const p=touch(e.name,e.id,e.unit,e.dept); p.days[k]={src:"daily",hw:e.min}; p.total+=e.min; });
+      dly.employees.forEach(e=>{ if(!e.min) return; const p=touch(e.name,e.id,e.unit,e.dept,e.team); p.days[k]={src:"daily",hw:e.min}; p.total+=e.min; });
       if(D) D.rows.filter(r=>r.date===k&&r.booked&&(r.vac||r.nonpto||r.hol)).forEach(r=>{ const p=touch(r.name,r.id); p.days[k]=p.days[k]||{src:"daily",hw:0}; p.days[k].tags=r; });
     }else if(D){ src[k]="booked";
       D.rows.filter(r=>r.date===k).forEach(r=>{ const p=touch(r.name,r.id); p.days[k]={...r,src:"booked"}; });
     }
   });
   if(D) D.rows.forEach(r=>{ const p=touch(r.name,r.id); if(r.booked){ p.bvac+=r.vac; p.bnonpto+=np(r); p.bhol+=r.hol; } else { p.vac+=r.vac; p.nonpto+=np(r); p.hol+=r.hol; } if(onCall(r)) p.oncall=(p.oncall||0)+1; });
-  // clocked in: from the newest report covering the latest day with hours
-  const liveDay=keys.filter(k=>src[k]==="detail"||src[k]==="daily").pop();
-  let live={known:false};
-  if(liveDay&&src[liveDay]==="detail"&&D.run_date===liveDay&&D.run_time){
-    live={known:true,label:t12(D.run_time)};
-    D.rows.filter(r=>r.date===liveDay&&r.open).forEach(r=>{ const p=people.get(r.name); if(p) p.open=true; });
-  }else if(liveDay&&src[liveDay]==="daily"){
-    const [s1,s0]=byDay[liveDay]; const el=s0?(new Date(s1.captured_at)-new Date(s0.captured_at))/60000:0;
-    if(s0&&el>0&&el<=250){ const before=new Map(s0.employees.map(e=>[e.name,e.min])); const up=s1.employees.filter(e=>e.min-(before.get(e.name)??e.min)>=2);
-      if(up.length){ live={known:true,label:new Date(s1.captured_at).toLocaleTimeString(undefined,{hour:"numeric",minute:"2-digit"})}; up.forEach(e=>{ const p=people.get(e.name); if(p) p.open=true; }); } }
+  // clocked in: compare the two newest readings of the latest day (scheduled runs and/or the import)
+  const liveDay=keys.filter(k=>src[k]&&src[k]!=="booked").pop();
+  let live={known:false,from:0};
+  if(liveDay){
+    const obs=(byDay[liveDay]||[]).map(s=>({t:new Date(s.captured_at).getTime(),kind:"daily",mins:new Map(s.employees.map(e=>[e.name,e.min]))}));
+    if(D&&D.run_date===liveDay) obs.push({t:dTime,kind:"detail",mins:new Map(D.rows.filter(r=>r.date===liveDay).map(r=>[r.name,r.hw]))});
+    obs.sort((a,b)=>b.t-a.t);
+    const [o1,o0]=obs, lbl=t=>new Date(t).toLocaleTimeString(undefined,{hour:"numeric",minute:"2-digit"});
+    if(o1&&o1.kind==="detail"&&D.run_time){
+      live={known:true,label:t12(D.run_time),from:o1.t,detail:true};
+      D.rows.filter(r=>r.date===liveDay&&r.open).forEach(r=>{ const p=people.get(r.name); if(p) p.open=true; });
+    }else if(o1&&o0&&o1.t-o0.t>0&&(o1.t-o0.t)/60000<=250){
+      const up=[...o1.mins].filter(([n,m])=>m-(o0.mins.get(n)??m)>=2).map(([n])=>n);
+      if(up.length){ live={known:true,label:lbl(o1.t),from:o1.t}; up.forEach(n=>{ const p=people.get(n); if(p) p.open=true; }); }
+    }
   }
-  // live estimate: keep counting for anyone still clocked in, from the last report to now (today only)
+  // clocked back in after the import: time off the clock since then = time passed minus hours added (counts as lunch)
+  if(liveDay&&src[liveDay]==="merged") people.forEach(p=>{ const c=p.days[liveDay]; if(!p.open||!c||!c.laterT||!c.end||!c.start) return;
+    const off=Math.round((c.laterT-etToMs(liveDay,c.end))/60000)-(c.hw-c.detailHw); if(off>=15) c.offLater=off; });
+  // live estimate: keep counting for anyone still clocked in, from the last reading to now (today only)
   const todayET=etDate(Date.now());
   if(live.known&&liveDay===todayET){
-    const from=src[liveDay]==="detail"?etToMs(D.run_date,D.run_time):new Date(byDay[liveDay][0].captured_at).getTime();
     const endOfDay=etToMs(liveDay,"23:59");
-    const extra=Math.max(0,Math.floor((Math.min(Date.now(),endOfDay)-from)/60000));
-    if(extra>0){ live.extra=extra; people.forEach(p=>{ if(!p.open) return; const c=p.days[liveDay]; if(!c) return; p.days[liveDay]={...c,hw:c.hw+extra,live:true,baseHw:c.hw}; p.total+=extra; p.live=true; }); }
+    const extra=Math.max(0,Math.floor((Math.min(Date.now(),endOfDay)-live.from)/60000));
+    if(extra>0){ live.extra=extra; people.forEach(p=>{ if(!p.open) return; const c=p.days[liveDay]; if(!c) return; p.days[liveDay]={...c,hw:c.hw+extra,live:true,baseHw:c.baseHw??c.hw}; p.total+=extra; p.live=true; }); }
   }
   const newest=[D,...Object.values(byDay).map(a=>a[0])].filter(Boolean).sort((a,b)=>b.captured_at.localeCompare(a.captured_at))[0];
   return {days,keys,live,liveDay,hasDetail:!!D,D,newest,people:[...people.values()].filter(p=>p.total>0||p.open||p.vac||p.nonpto||p.hol||p.bvac||p.bnonpto||p.bhol)};
@@ -434,8 +456,8 @@ function cellHtml(c,open){
   if(!c) return `<td class="empty">–</td>`;
   if(c.src==="booked"){ const what=c.train?"Training ":(c.hw?"Scheduled ":""); const inner=[c.start&&c.end&&c.hw?`<span class="tag booked">${what}${t12(c.start)}–${t12(c.end)} · booked</span>`:"",tagHtml(c,true)].join(""); return inner?`<td class="bookedcell">${inner}</td>`:`<td class="empty">–</td>`; }
   if(c.src==="daily") return `<td>${c.hw?`<span class="tot">${c.live?"~":""}${fmt(c.hw)}${c.live?'<span class="livetag">live</span>':""}</span>`:""}${c.tags?tagHtml(c.tags,true):""}</td>`;
-  const span=c.start?`<span class="punch">${t12(c.start)} – ${open?"now":t12(c.end)}</span>`:"";
-  const gap=offClock(c); const lunch=c.start?`<span class="punch">${c.meal&&gap?"Lunch "+short(c.meal)+" + "+short(gap)+" off clock":c.meal?"Lunch "+short(c.meal):gap?"Lunch "+short(gap)+" (off clock)":"No lunch"}</span>`:"";
+  const span=c.start?`<span class="punch">${t12(c.start)} – ${open?"now":c.endUnknown?"out":t12(c.end)}</span>`:"";
+  const gap=offClock(c)+(c.offLater||0); const lunch=c.start?`<span class="punch">${c.meal&&gap?"Lunch "+short(c.meal)+" + "+short(gap)+" off clock":c.meal?"Lunch "+short(c.meal):gap?"Lunch "+short(gap)+" (off clock)":"No lunch"}</span>`:"";
   return `<td class="${open?"open":""}">${span}${lunch}${tagHtml(c,false)}${c.hw||c.start?`<span class="tot bottom">${c.live?"~":""}${fmt(c.hw)}${c.live?'<span class="livetag">live</span>':""}</span>`:""}</td>`;
 }
 function offCell(n,b){ return `<td class="off">${n||b?`${n?short(n):"0h"}${b?`<span class="bk">+${short(b)} booked</span>`:""}`:'<span class="empty">–</span>'}</td>`; }
@@ -444,7 +466,7 @@ function render(){
   if(!v){ th.innerHTML=""; tb.innerHTML=`<tr><td colspan="12" class="emptystate">Loading hours…</td></tr>`; return; }
   const {days,keys,live,hasDetail}=v, todayKey=iso(new Date()), f=d=>d.toLocaleDateString(undefined,{month:"short",day:"numeric"});
   $("sub").textContent=`Week of Mon ${f(days[0])} – Sun ${f(days[6])}, ${days[6].getFullYear()}`+(v.newest?` · updated ${timeLabel(v.newest.captured_at)}`:"");
-  const all=v.people, depts=[...DEPTS]; ["Office","Other"].forEach(x=>{ if(all.some(p=>p.dept===x)) depts.push(x); });
+  const all=v.people, depts=[...DEPTS]; ["Office","Warehouse"].forEach(x=>{ if(all.some(p=>p.dept===x)) depts.push(x); });
   if(!["All",...depts].includes(dept)) dept="All";
   const chips=$("chips"); chips.innerHTML='<span class="lbl">Department</span>';
   ["All",...depts].forEach(d=>{ const b=document.createElement("button"); b.className="chip"; b.type="button"; b.setAttribute("aria-pressed",String(d===dept)); b.textContent=d; b.onclick=()=>{dept=d;render();}; chips.appendChild(b); });
@@ -475,7 +497,7 @@ function render(){
     const pct=Math.min(100,p.total/2400*100), cls=p.total>=2400?"over":p.total>=2160?"near":"";
     const left=p.total>=2400?`${fmt(p.total-2400)} over 40`:`${fmt(2400-p.total)} to 40`;
     const sub=p.unit&&p.unit!==p.dept?p.unit:p.dept;
-    return `<tr><td><span class="name">${esc(p.name)}</span>${p.open?'<span class="flag">Clocked in</span>':(live.known&&p.days[v.liveDay]&&(p.days[v.liveDay].hw||p.days[v.liveDay].start)?((()=>{ const c=p.days[v.liveDay]; return v.liveDay===todayKey&&c.src==="detail"&&c.end&&tmin(c.end)>=LUNCH_FROM&&tmin(c.end)<=LUNCH_TO; })()?'<span class="flag lunch">Out – lunch?</span>':'<span class="flag out">Clocked out</span>'):"")}<span class="dept">${esc(sub)}</span></td>${cells}<td class="total ${cls}">${p.live?"~":""}${fmt(p.total)}<span class="to40">${left}</span><span class="bar"><i style="width:${pct}%"></i></span></td>${hasDetail?offCell(p.vac,p.bvac)+offCell(p.nonpto,p.bnonpto)+offCell(p.hol,p.bhol):""}</tr>`;
+    return `<tr><td><span class="name">${esc(p.name)}</span>${p.open?'<span class="flag">Clocked in</span>':(live.known&&p.days[v.liveDay]&&(p.days[v.liveDay].hw||p.days[v.liveDay].start)?((()=>{ const c=p.days[v.liveDay]; return v.liveDay===todayKey&&live.detail&&c.src==="detail"&&c.end&&tmin(c.end)>=LUNCH_FROM&&tmin(c.end)<=LUNCH_TO; })()?'<span class="flag lunch">Out – lunch?</span>':'<span class="flag out">Clocked out</span>'):"")}<span class="dept">${esc(sub)}</span></td>${cells}<td class="total ${cls}">${p.live?"~":""}${fmt(p.total)}<span class="to40">${left}</span><span class="bar"><i style="width:${pct}%"></i></span></td>${hasDetail?offCell(p.vac,p.bvac)+offCell(p.nonpto,p.bnonpto)+offCell(p.hol,p.bhol):""}</tr>`;
   }).join("");
 }
 
