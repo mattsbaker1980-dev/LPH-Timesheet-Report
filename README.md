@@ -10,4 +10,7 @@ A scheduled Claude task runs at 8:15 AM and 2:15 PM Eastern:
 2. `sync/ts_ingest.py` turns each report into a snapshot (one day, one run time).
 3. `sync/ts_publish.js` adds new snapshots to `data/weeks/<sunday>.json` and updates `data/index.json`.
 
-Each day shows its newest report (the next-morning "Yesterday" run is final). Anyone whose hours went up between two same-day runs (1:45 and 2:00 PM) is flagged as still clocked in.
+Weeks run Monday–Sunday to match payroll. Each day shows its newest report (the next-morning "Yesterday" run is final).
+
+## Importing the Technician Timesheet Summary
+Run the legacy Technician Timesheet Summary for all employees in ServiceTitan, export to Excel, and click **Import timesheet** on the page. It adds start/end times, lunch, PTO (Vac), Non-PTO and Holiday hours for that week, and flags anyone whose End matches the export time as still clocked in. The first import on a computer asks for a fine-grained GitHub token with Contents: Read and write on this repo only; it is kept in that browser (localStorage), never in the code.

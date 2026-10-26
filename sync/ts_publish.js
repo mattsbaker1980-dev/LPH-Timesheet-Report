@@ -1,4 +1,4 @@
-// Merge snapshot JSON files into the Timesheet Report repo (data/weeks/<sunday>.json + data/index.json).
+// Merge snapshot JSON files into the Timesheet Report repo (data/weeks/<monday>.json + data/index.json).
 // API mode:   GH_TOKEN=... node ts_publish.js OUTDIR
 // Local mode: node ts_publish.js OUTDIR --local REPODIR
 const fs=require("fs"),path=require("path");
@@ -20,15 +20,16 @@ async function putFile(p,obj,sha,msg){
   const r=await fetch(`https://api.github.com/repos/${REPO}/contents/${p}`,{method:"PUT",headers:H,body:JSON.stringify({message:msg,branch:BRANCH,content:Buffer.from(body).toString("base64"),...(sha?{sha}:{})})});
   if(!r.ok) throw new Error("PUT "+p+" "+r.status+" "+await r.text());
 }
-const sunday=s=>{ const [y,m,d]=s.split("-").map(Number); const t=new Date(Date.UTC(y,m-1,d)); t.setUTCDate(t.getUTCDate()-t.getUTCDay()); return t.toISOString().slice(0,10); };
+const weekOf=s=>{ const [y,m,d]=s.split("-").map(Number); const t=new Date(Date.UTC(y,m-1,d)); t.setUTCDate(t.getUTCDate()-((t.getUTCDay()+6)%7)); return t.toISOString().slice(0,10); }; // pay week starts Monday
 (async()=>{
   const files=fs.readdirSync(outDir).filter(f=>f.endsWith(".json"));
   const byWeek={};
   for(const f of files){
     const s=JSON.parse(fs.readFileSync(path.join(outDir,f),"utf8"));
-    if(!s.range_start||s.range_start!==s.range_end||!Array.isArray(s.employees)) continue; // daily reports only
+    const ok=s.kind==="detail"?Array.isArray(s.rows):(s.range_start&&s.range_start===s.range_end&&Array.isArray(s.employees));
+    if(!ok) continue; // daily Timesheet Reports and Timesheet Summary (detail) files only
     s.id=f.replace(/\.json$/,"");
-    (byWeek[sunday(s.range_start)]=byWeek[sunday(s.range_start)]||[]).push(s);
+    (byWeek[weekOf(s.range_start)]=byWeek[weekOf(s.range_start)]||[]).push(s);
   }
   let added=0; const touched=[];
   for(const wk of Object.keys(byWeek).sort()){
