@@ -185,7 +185,7 @@ td.total .bar{margin-left:auto;margin-right:auto;max-width:90px}
     </table>
   </div>
 
-  <p class="foot">Daily totals update automatically at 8:15 AM and 2:15 PM from the ServiceTitan Timesheet Report. Start, end, lunch and time off come from the Technician Timesheet Summary: run it for all employees in ServiceTitan, export to Excel, and use <b>Import timesheet</b>. Each day shows whichever report is newest. Non-PTO blocks of 90 minutes or less are the on-call holds dispatch adds so Scheduling Pro skips on-call techs until 9 AM; they show as "On call" and don't count as time off. Totals count paid hours, vacation included; booked time later in the week is shown but not counted until it happens.</p>
+  <p class="foot">Daily totals update automatically at 8:15 AM and 2:15 PM from the ServiceTitan Timesheet Report. Start, end, lunch and time off come from the Technician Timesheet Summary: run it for all employees in ServiceTitan, export to Excel, and use <b>Import timesheet</b>. Each day shows whichever report is newest. Morning Non-PTO blocks of 90 minutes or less (ending by 9 AM, or before a clock-in at 8:30 or later) are the on-call holds dispatch adds so Scheduling Pro skips on-call techs until 9 AM; they show as "On call" and don't count as time off. Other Non-PTO, like leaving early for an appointment, counts as Non-PTO. Totals count paid hours, vacation included; booked time later in the week is shown but not counted until it happens.</p>
 </div>
 
 <div class="modalbg" id="modal" hidden>
@@ -232,7 +232,10 @@ function deptOf(...vals){
 }
 // On-call holds: dispatch puts a short Non-PTO block (7:30-9:00) on on-call techs so Scheduling Pro skips them until 9. Treat 90 min or less as on call, not time off.
 const ONCALL_MAX=90;
-function onCall(r){ return r.nonpto>0&&r.nonpto<=ONCALL_MAX; }
+// Morning only: either a day with no clock-in whose block ends by 9:00, or a day the tech clocked in at 8:30 or later (the block sat before their start).
+function onCall(r){ if(!(r.nonpto>0&&r.nonpto<=ONCALL_MAX)) return false;
+  if(!r.start) return !!r.end&&tmin(r.end)<=9*60;
+  return tmin(r.start)>=8*60+30; }
 function np(r){ return onCall(r)?0:r.nonpto; }
 function esc(s){ return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
 function timeLabel(t){ const d=new Date(t); return d.toLocaleDateString(undefined,{weekday:"short",month:"short",day:"numeric"})+", "+d.toLocaleTimeString(undefined,{hour:"numeric",minute:"2-digit"}); }
