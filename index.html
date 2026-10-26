@@ -416,7 +416,7 @@ function render(){
   t.querySelector("input").onchange=e=>{liveOnly=e.target.checked;render();}; chips.appendChild(t);
   const scoped=all.filter(p=>dept==="All"||p.dept===dept);
   let rows=liveOnly&&live.known?scoped.filter(p=>p.open):scoped;
-  rows.sort((a,b)=>b.total-a.total||a.name.localeCompare(b.name));
+  rows.sort((a,b)=>a.name.localeCompare(b.name,undefined,{sensitivity:"base"}));
   $("sEmp").textContent=scoped.length;
   $("sHrs").textContent=fmt(scoped.reduce((a,p)=>a+p.total,0)).replace(/ 00m$/,"");
   $("sLive").textContent=live.known?scoped.filter(p=>p.open).length:"—";
