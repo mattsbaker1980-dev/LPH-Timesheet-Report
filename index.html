@@ -117,6 +117,11 @@ tbody tr:hover td{background:var(--brand-soft)}
 .tot{display:block;font-weight:600}
 td .punch{display:block;font-size:11px;color:var(--muted)}
 .tag{display:inline-block;margin-top:4px;margin-right:4px;font-size:11px;font-weight:600;border-radius:4px;padding:1px 6px;white-space:nowrap}
+.sortbtn{all:unset;cursor:pointer;display:inline-flex;flex-direction:column;align-items:center;gap:0;font:inherit;color:inherit;text-transform:inherit;letter-spacing:inherit}
+#thead th:first-child .sortbtn{align-items:flex-start}
+.sortbtn:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+.sortbtn:hover{color:var(--accent-ink)}
+.sortbtn .arr{font-size:9px;line-height:1;min-height:9px;color:var(--accent)}
 .tot.bottom{margin-top:4px}
 .flag.out{color:var(--crit);background:var(--crit-soft)}
 .flag.out::before{background:var(--crit);animation:none}
@@ -217,7 +222,7 @@ const REPO="mattsbaker1980-dev/LPH-Timesheet-Report", BRANCH="main";
 const DAYS=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
 const DEPTS=["Plumbing","Sewer","Electrical","HVAC"];
 const $=id=>document.getElementById(id);
-let weeks=[], weekIdx=-1, cache={}, dept="All", liveOnly=false, pending=null;
+let weeks=[], weekIdx=-1, cache={}, dept="All", liveOnly=false, pending=null, sortKey="name", sortDir=1;
 
 /* ---------- helpers ---------- */
 function fmt(min){ min=Math.max(0,Math.round(min||0)); const h=Math.floor(min/60), m=min%60; return h+"h "+String(m).padStart(2,"0")+"m"; }
@@ -416,7 +421,9 @@ function render(){
   t.querySelector("input").onchange=e=>{liveOnly=e.target.checked;render();}; chips.appendChild(t);
   const scoped=all.filter(p=>dept==="All"||p.dept===dept);
   let rows=liveOnly&&live.known?scoped.filter(p=>p.open):scoped;
-  rows.sort((a,b)=>a.name.localeCompare(b.name,undefined,{sensitivity:"base"}));
+  const byName=(a,b)=>a.name.localeCompare(b.name,undefined,{sensitivity:"base"});
+  const val=p=>sortKey==="total"?p.total:sortKey==="vac"?p.vac+p.bvac:sortKey==="nonpto"?p.nonpto+p.bnonpto:sortKey==="hol"?p.hol+p.bhol:(p.days[sortKey]?.hw||0);
+  rows.sort(sortKey==="name"?(a,b)=>sortDir*byName(a,b):(a,b)=>sortDir*(val(a)-val(b))||byName(a,b));
   $("sEmp").textContent=scoped.length;
   $("sHrs").textContent=fmt(scoped.reduce((a,p)=>a+p.total,0)).replace(/ 00m$/,"");
   $("sLive").textContent=live.known?scoped.filter(p=>p.open).length:"—";
@@ -426,7 +433,9 @@ function render(){
   if(!hasDetail) notes.push("Start, end, lunch and time off show up after you import the Technician Timesheet Summary for this week.");
   if(!live.known&&keys.includes(todayKey)) notes.push("Clocked-in status needs either an imported Timesheet Summary from today or the 1:45 and 2:00 PM runs of the Timesheet Report.");
   $("note").textContent=notes.join(" "); $("note").hidden=!notes.length;
-  th.innerHTML="<tr><th>Employee</th>"+days.map((d,i)=>`<th class="${keys[i]===todayKey?"today":""}">${DAYS[i]}<span class="d">${d.getMonth()+1}/${d.getDate()}</span></th>`).join("")+"<th>Week total</th>"+(hasDetail?"<th>PTO</th><th>Non-PTO</th><th>Holiday</th>":"")+"</tr>";
+  const sh=(key,label,cls="")=>{ const on=sortKey===key, arrow=on?(sortDir<0?"▼":"▲"):""; return `<th class="${cls}" aria-sort="${on?(sortDir<0?"descending":"ascending"):"none"}"><button type="button" class="sortbtn" data-sort="${key}">${label}<span class="arr">${arrow}</span></button></th>`; };
+  th.innerHTML="<tr>"+sh("name","Employee")+days.map((d,i)=>sh(keys[i],`${DAYS[i]}<span class="d">${d.getMonth()+1}/${d.getDate()}</span>`,keys[i]===todayKey?"today":"")).join("")+sh("total","Week total")+(hasDetail?sh("vac","PTO")+sh("nonpto","Non-PTO")+sh("hol","Holiday"):"")+"</tr>";
+  th.querySelectorAll(".sortbtn").forEach(b=>b.onclick=()=>{ const k=b.dataset.sort; if(k==="name"){ sortDir=sortKey==="name"?-sortDir:1; } else { sortDir=sortKey===k?-sortDir:-1; } sortKey=k; render(); });
   const cols=9+(hasDetail?3:0);
   if(!rows.length){ tb.innerHTML=`<tr><td colspan="${cols}" class="emptystate">${liveOnly?"Nobody in this group is still clocked in.":"No hours for this group this week."}</td></tr>`; return; }
   tb.innerHTML=rows.map(p=>{
