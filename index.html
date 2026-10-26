@@ -117,6 +117,9 @@ tbody tr:hover td{background:var(--brand-soft)}
 .tot{display:block;font-weight:600}
 td .punch{display:block;font-size:11px;color:var(--muted)}
 .tag{display:inline-block;margin-top:4px;margin-right:4px;font-size:11px;font-weight:600;border-radius:4px;padding:1px 6px;white-space:nowrap}
+.tot.bottom{margin-top:4px}
+.flag.out{color:var(--crit);background:var(--crit-soft)}
+.flag.out::before{background:var(--crit);animation:none}
 .tag.oc{background:var(--live-soft);color:var(--live)}
 .tag.oc.booked{color:var(--live);border-color:var(--live)}
 .tag.vac{background:var(--brand-soft);color:var(--brand)}
@@ -397,7 +400,7 @@ function cellHtml(c,open){
   if(c.src==="daily") return `<td>${c.hw?`<span class="tot">${fmt(c.hw)}</span>`:""}${c.tags?tagHtml(c.tags,true):""}</td>`;
   const span=c.start?`<span class="punch">${t12(c.start)} – ${open?"now":t12(c.end)}</span>`:"";
   const lunch=c.start?`<span class="punch">${c.meal?"Lunch "+short(c.meal):"No lunch"}</span>`:"";
-  return `<td class="${open?"open":""}">${c.hw||c.start?`<span class="tot">${fmt(c.hw)}</span>`:""}${open?'<span class="note">(still clocked in)</span>':""}${span}${lunch}${tagHtml(c,false)}</td>`;
+  return `<td class="${open?"open":""}">${span}${lunch}${tagHtml(c,false)}${c.hw||c.start?`<span class="tot bottom">${fmt(c.hw)}</span>`:""}</td>`;
 }
 function offCell(n,b){ return `<td class="off">${n||b?`${n?short(n):"0h"}${b?`<span class="bk">+${short(b)} booked</span>`:""}`:'<span class="empty">–</span>'}</td>`; }
 function render(){
@@ -431,7 +434,7 @@ function render(){
     const pct=Math.min(100,p.total/2400*100), cls=p.total>=2400?"over":p.total>=2160?"near":"";
     const left=p.total>=2400?`${fmt(p.total-2400)} over 40`:`${fmt(2400-p.total)} to 40`;
     const sub=p.unit&&p.unit!==p.dept?p.unit:p.dept;
-    return `<tr><td><span class="name">${esc(p.name)}</span>${p.open?'<span class="flag">Clocked in</span>':""}<span class="dept">${esc(sub)}</span></td>${cells}<td class="total ${cls}">${fmt(p.total)}<span class="to40">${left}</span><span class="bar"><i style="width:${pct}%"></i></span></td>${hasDetail?offCell(p.vac,p.bvac)+offCell(p.nonpto,p.bnonpto)+offCell(p.hol,p.bhol):""}</tr>`;
+    return `<tr><td><span class="name">${esc(p.name)}</span>${p.open?'<span class="flag">Clocked in</span>':(live.known&&p.days[v.liveDay]&&(p.days[v.liveDay].hw||p.days[v.liveDay].start)?'<span class="flag out">Clocked out</span>':"")}<span class="dept">${esc(sub)}</span></td>${cells}<td class="total ${cls}">${fmt(p.total)}<span class="to40">${left}</span><span class="bar"><i style="width:${pct}%"></i></span></td>${hasDetail?offCell(p.vac,p.bvac)+offCell(p.nonpto,p.bnonpto)+offCell(p.hol,p.bhol):""}</tr>`;
   }).join("");
 }
 
