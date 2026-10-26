@@ -139,6 +139,13 @@ td.off .bk{display:block;font-size:11px;font-weight:500;color:var(--muted)}
 table{min-width:1100px}
 .wrap{max-width:1500px}
 th,td{padding:9px 10px}
+#thead th:not(:first-child),#tbody td:not(:first-child){text-align:center;border-left:1px solid var(--line)}
+#thead th.today{box-shadow:inset 0 -3px 0 var(--accent)}
+.tag{white-space:normal;line-height:1.3;display:block;width:fit-content;max-width:100%;margin:4px auto 0}
+#tbody td:not(:first-child){white-space:normal;overflow-wrap:anywhere}
+#thead th:nth-child(n+2):nth-child(-n+8),#tbody td:nth-child(n+2):nth-child(-n+8){width:11%;min-width:104px}
+td .punch,.tot,td.open .note{text-align:center}
+td.total .bar{margin-left:auto;margin-right:auto;max-width:90px}
 </style>
 <div class="wrap">
   <header class="brandbar">
@@ -244,12 +251,12 @@ function parseFile(wb,capturedIso,source){
   if(hi>=0){
     const h=rows[hi].map(x=>String(x??"").trim().toLowerCase()); const col=(...n)=>{ for(const x of n){ const i=h.indexOf(x); if(i>=0) return i; } return -1; };
     const c={id:col("employee id"),name:col("employee","employee name","technician"),date:col("date"),start:col("start"),end:col("end"),meal:col("meal"),hw:col("hours worked"),reg:col("regular"),ot:col("overtime"),
-      vac:col("vac","vacation"),pto:col("paid time off"),np:col("non-pto"),np2:h.includes("non-pto")?col("non pto"):-1,hol:col("hol","holiday"),hol2:col("hol1")};
+      vac:col("vac","vacation"),pto:col("paid time off"),np:col("non-pto"),np2:h.includes("non-pto")?col("non pto"):-1,hol:col("hol","holiday"),hol2:col("hol1"),tr:col("training"),tr2:col("office training")};
     const g=(r,k)=>c[k]>=0?r[c[k]]:null;
     const out=[];
     for(const r of rows.slice(hi+1)){ if(!r) continue; const name=String(g(r,"name")??"").trim(), d=serialDate(g(r,"date")); if(!name||!d) continue;
       out.push({id:String(g(r,"id")??""),name,date:d,start:clock(g(r,"start")),end:clock(g(r,"end")),meal:dayMins(g(r,"meal")),hw:dayMins(g(r,"hw")),reg:dayMins(g(r,"reg")),ot:dayMins(g(r,"ot")),
-        vac:dayMins(g(r,"vac"))+dayMins(g(r,"pto")),nonpto:dayMins(g(r,"np"))+dayMins(g(r,"np2")),hol:dayMins(g(r,"hol"))+dayMins(g(r,"hol2"))}); }
+        vac:dayMins(g(r,"vac"))+dayMins(g(r,"pto")),nonpto:dayMins(g(r,"np"))+dayMins(g(r,"np2")),hol:dayMins(g(r,"hol"))+dayMins(g(r,"hol2")),train:dayMins(g(r,"tr"))+dayMins(g(r,"tr2"))}); }
     if(!out.length) throw new Error("The Timesheet Summary had a header row but no employee rows.");
     const runDate=etDate(capturedIso);
     const ends=out.filter(x=>x.date===runDate&&x.start&&x.end&&!x.vac).map(x=>x.end);
@@ -377,7 +384,7 @@ function tagHtml(r,booked){ const t=[]; if(r.vac) t.push(["vac","PTO "+short(r.v
   return t.map(([c,x])=>`<span class="tag ${c}${booked?" booked":""}">${x}${booked?" · booked":""}</span>`).join(""); }
 function cellHtml(c,open){
   if(!c) return `<td class="empty">–</td>`;
-  if(c.src==="booked"){ const inner=tagHtml(c,true)||(c.start&&c.end?`<span class="tag booked">${t12(c.start)}–${t12(c.end)} · booked</span>`:""); return inner?`<td class="bookedcell">${inner}</td>`:`<td class="empty">–</td>`; }
+  if(c.src==="booked"){ const what=c.train?"Training ":(c.hw?"Scheduled ":""); const inner=[c.start&&c.end&&c.hw?`<span class="tag booked">${what}${t12(c.start)}–${t12(c.end)} · booked</span>`:"",tagHtml(c,true)].join(""); return inner?`<td class="bookedcell">${inner}</td>`:`<td class="empty">–</td>`; }
   if(c.src==="daily") return `<td>${c.hw?`<span class="tot">${fmt(c.hw)}</span>`:""}${c.tags?tagHtml(c.tags,true):""}</td>`;
   const span=c.start?`<span class="punch">${t12(c.start)} – ${open?"now":t12(c.end)}</span>`:"";
   const lunch=c.start?`<span class="punch">${c.meal?"Lunch "+short(c.meal):"No lunch"}</span>`:"";

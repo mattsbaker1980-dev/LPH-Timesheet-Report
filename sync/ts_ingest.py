@@ -75,7 +75,7 @@ def parse_detail(wb,captured_iso,source):
     col=lambda *names: next((h.index(n) for n in names if n in h),-1)
     c=dict(id=col("employee id"),name=col("employee","employee name","technician"),date=col("date"),start=col("start"),end=col("end"),
            meal=col("meal"),hw=col("hours worked"),reg=col("regular"),ot=col("overtime"),vac=col("vac","vacation"),
-           nonpto=col("non-pto","non pto"),nonpto2=col("non pto") if "non-pto" in h else -1,hol=col("hol","holiday"),hol2=col("hol1"),pto=col("paid time off"))
+           nonpto=col("non-pto","non pto"),nonpto2=col("non pto") if "non-pto" in h else -1,hol=col("hol","holiday"),hol2=col("hol1"),pto=col("paid time off"),train=col("training"),train2=col("office training"))
     g=lambda r,k: r[c[k]] if c[k]>=0 else None
     out=[]
     for r in rows[hi+1:]:
@@ -84,7 +84,7 @@ def parse_detail(wb,captured_iso,source):
         if not name or not d: continue
         out.append(dict(id=str(g(r,"id") or ""),name=name,date=d,start=hhmm(g(r,"start")),end=hhmm(g(r,"end")),meal=mins(g(r,"meal")),
             hw=mins(g(r,"hw")),reg=mins(g(r,"reg")),ot=mins(g(r,"ot")),vac=mins(g(r,"vac"))+mins(g(r,"pto")),
-            nonpto=mins(g(r,"nonpto"))+mins(g(r,"nonpto2")),hol=mins(g(r,"hol"))+mins(g(r,"hol2"))))
+            nonpto=mins(g(r,"nonpto"))+mins(g(r,"nonpto2")),hol=mins(g(r,"hol"))+mins(g(r,"hol2")),train=mins(g(r,"train"))+mins(g(r,"train2"))))
     if not out: return None
     run_date=datetime.datetime.fromisoformat(captured_iso.replace("Z","+00:00")).astimezone(ET).date().isoformat()
     # The export time shows up as the End of everyone still on the clock: take the most common End on the run date.
