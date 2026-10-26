@@ -196,7 +196,7 @@ td.total .bar{margin-left:auto;margin-right:auto;max-width:90px}
     </table>
   </div>
 
-  <p class="foot">Daily totals update automatically at 8:15 AM and 2:15 PM from the ServiceTitan Timesheet Report. Start, end, lunch and time off come from the Technician Timesheet Summary: run it for all employees in ServiceTitan, export to Excel, and use <b>Import timesheet</b>. Each day shows whichever report is newest. Morning Non-PTO blocks of 90 minutes or less (ending by 9 AM, or before a clock-in at 8:30 or later) are the on-call holds dispatch adds so Scheduling Pro skips on-call techs until 9 AM; they show as "On call" and don't count as time off. Other Non-PTO, like leaving early for an appointment, counts as Non-PTO. Totals count paid hours, vacation included; booked time later in the week is shown but not counted until it happens.</p>
+  <p class="foot">Daily totals update automatically at 8:15 AM, 10:15 AM, 12:15, 2:15, 4:15, 6:15 and 10:15 PM from the ServiceTitan Timesheet Report; anyone whose hours went up since the previous run shows as clocked in. Start, end, lunch and time off come from the Technician Timesheet Summary: run it for all employees in ServiceTitan, export to Excel, and use <b>Import timesheet</b>. Each day shows whichever report is newest. Morning Non-PTO blocks of 90 minutes or less (ending by 9 AM, or before a clock-in at 8:30 or later) are the on-call holds dispatch adds so Scheduling Pro skips on-call techs until 9 AM; they show as "On call" and don't count as time off. Other Non-PTO, like leaving early for an appointment, counts as Non-PTO. Totals count paid hours, vacation included; booked time later in the week is shown but not counted until it happens.</p>
 </div>
 
 <div class="modalbg" id="modal" hidden>
@@ -397,7 +397,7 @@ function buildView(){
     D.rows.filter(r=>r.date===liveDay&&r.open).forEach(r=>{ const p=people.get(r.name); if(p) p.open=true; });
   }else if(liveDay&&src[liveDay]==="daily"){
     const [s1,s0]=byDay[liveDay]; const el=s0?(new Date(s1.captured_at)-new Date(s0.captured_at))/60000:0;
-    if(s0&&el>0&&el<=120){ const before=new Map(s0.employees.map(e=>[e.name,e.min])); const up=s1.employees.filter(e=>e.min-(before.get(e.name)??e.min)>=2);
+    if(s0&&el>0&&el<=250){ const before=new Map(s0.employees.map(e=>[e.name,e.min])); const up=s1.employees.filter(e=>e.min-(before.get(e.name)??e.min)>=2);
       if(up.length){ live={known:true,label:new Date(s1.captured_at).toLocaleTimeString(undefined,{hour:"numeric",minute:"2-digit"})}; up.forEach(e=>{ const p=people.get(e.name); if(p) p.open=true; }); } }
   }
   // live estimate: keep counting for anyone still clocked in, from the last report to now (today only)
@@ -448,7 +448,7 @@ function render(){
   $("sOver").textContent=scoped.filter(p=>p.total>=2400).length;
   const notes=[];
   if(!hasDetail) notes.push("Start, end, lunch and time off show up after you import the Technician Timesheet Summary for this week.");
-  if(!live.known&&keys.includes(todayKey)) notes.push("Clocked-in status needs either an imported Timesheet Summary from today or the 1:45 and 2:00 PM runs of the Timesheet Report.");
+  if(!live.known&&keys.includes(todayKey)) notes.push("Clocked-in status appears once two of today's Timesheet Report runs are in (8 AM and 10 AM onward), or after you import a Timesheet Summary from today.");
   if(live.extra) notes.push(`Numbers marked ~ are live estimates: hours for anyone clocked in keep counting from the last report (${live.label}) to now. The next report replaces them with ServiceTitan\'s numbers.`);
   $("note").textContent=notes.join(" "); $("note").hidden=!notes.length;
   const sh=(key,label,cls="")=>{ const on=sortKey===key, arrow=on?(sortDir<0?"▼":"▲"):""; return `<th class="${cls}" aria-sort="${on?(sortDir<0?"descending":"ascending"):"none"}"><button type="button" class="sortbtn" data-sort="${key}">${label}<span class="arr">${arrow}</span></button></th>`; };
