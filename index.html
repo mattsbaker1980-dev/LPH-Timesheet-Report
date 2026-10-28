@@ -430,8 +430,13 @@ function buildView(){
       live={known:true,label:t12(D.run_time),from:o1.t,detail:true};
       D.rows.filter(r=>r.date===liveDay&&r.open).forEach(r=>{ const p=people.get(r.name); if(p) p.open=true; });
     }else if(o1&&o0&&o1.t-o0.t>0&&(o1.t-o0.t)/60000<=250){
-      const up=[...o1.mins].filter(([n,m])=>m-(o0.mins.get(n)??m)>=2).map(([n])=>n);
-      if(up.length){ live={known:true,label:lbl(o1.t),from:o1.t}; up.forEach(n=>{ const p=people.get(n); if(p) p.open=true; }); }
+      // still on the clock only if hours rose by (nearly) the whole gap between readings; a smaller gain means they clocked out partway through
+      const el=(o1.t-o0.t)/60000, need=Math.max(2,el-Math.max(15,el*0.15));
+      const gains=[...o1.mins].map(([n,m])=>[n,m-(o0.mins.get(n)??m)]);
+      live={known:true,label:lbl(o1.t),from:o1.t};
+      gains.forEach(([n,g])=>{ const p=people.get(n); if(!p) return;
+        if(g>=need) p.open=true;
+        else if(g>=2){ const c=p.days[liveDay]; if(c){ c.estOut=new Date(o0.t+g*60000).toLocaleTimeString("en-US",{timeZone:"America/New_York",hour:"numeric",minute:"2-digit"}).replace(" AM","a").replace(" PM","p"); } } });
     }
   }
   // clocked back in after the import: time off the clock since then = time passed minus hours added (counts as lunch)
@@ -455,8 +460,8 @@ function tagHtml(r,booked){ const t=[]; if(onCall(r)) t.push(["oc","On call"]); 
 function cellHtml(c,open){
   if(!c) return `<td class="empty">–</td>`;
   if(c.src==="booked"){ const what=c.train?"Training ":(c.hw?"Scheduled ":""); const inner=[c.start&&c.end&&c.hw?`<span class="tag booked">${what}${t12(c.start)}–${t12(c.end)} · booked</span>`:"",tagHtml(c,true)].join(""); return inner?`<td class="bookedcell">${inner}</td>`:`<td class="empty">–</td>`; }
-  if(c.src==="daily") return `<td>${c.hw?`<span class="tot">${c.live?"~":""}${fmt(c.hw)}${c.live?'<span class="livetag">live</span>':""}</span>`:""}${c.tags?tagHtml(c.tags,true):""}</td>`;
-  const span=c.start?`<span class="punch">${t12(c.start)} – ${open?"now":c.endUnknown?"out":t12(c.end)}</span>`:"";
+  if(c.src==="daily") return `<td>${c.estOut&&!open?`<span class="punch">out ~${c.estOut}</span>`:""}${c.hw?`<span class="tot">${c.live?"~":""}${fmt(c.hw)}${c.live?'<span class="livetag">live</span>':""}</span>`:""}${c.tags?tagHtml(c.tags,true):""}</td>`;
+  const span=c.start?`<span class="punch">${t12(c.start)} – ${open?"now":c.endUnknown?(c.estOut?"~"+c.estOut:"out"):t12(c.end)}</span>`:"";
   const gap=offClock(c)+(c.offLater||0); const lunch=c.start?`<span class="punch">${c.meal&&gap?"Lunch "+short(c.meal)+" + "+short(gap)+" off clock":c.meal?"Lunch "+short(c.meal):gap?"Lunch "+short(gap)+" (off clock)":"No lunch"}</span>`:"";
   return `<td class="${open?"open":""}">${span}${lunch}${tagHtml(c,false)}${c.hw||c.start?`<span class="tot bottom">${c.live?"~":""}${fmt(c.hw)}${c.live?'<span class="livetag">live</span>':""}</span>`:""}</td>`;
 }
