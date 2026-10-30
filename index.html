@@ -478,6 +478,8 @@ function cellHtml(c,open){
   if(!c) return `<td class="empty">–</td>`;
   if(c.src==="booked"){ const what=c.train?"Training ":(c.hw?"Scheduled ":""); const inner=[c.start&&c.end&&c.hw?`<span class="tag booked">${what}${t12(c.start)}–${t12(c.end)} · booked</span>`:"",tagHtml(c,true)].join(""); return inner?`<td class="bookedcell">${inner}</td>`:`<td class="empty">–</td>`; }
   if(c.src==="daily") return `<td>${c.estOut&&!open?`<span class="punch">out ~${c.estOut}</span>`:""}${c.hw?`<span class="tot">${c.live?"~":""}${fmt(c.hw)}${c.live?'<span class="livetag">live</span>':""}</span>`:""}${c.tags?tagHtml(c.tags,true):""}</td>`;
+  const offDay=(c.vac||c.hol)&&c.hw<=c.vac+c.hol+1; // the whole day is PTO/holiday entered in ServiceTitan, not a clock-in
+  if(offDay) return `<td>${c.start?`<span class="punch">Time off ${t12(c.start)} – ${t12(c.end)}</span>`:""}${tagHtml(c,false)}<span class="tot bottom">${fmt(c.hw)}</span></td>`;
   const span=c.start?`<span class="punch">${t12(c.start)} – ${open?"now":c.endUnknown?(c.estOut?"~"+c.estOut:"out"):t12(c.end)}</span>`:"";
   const gap=offClock(c)+(c.offLater||0); const lunch=c.start?`<span class="punch">${c.meal&&gap?"Lunch "+short(c.meal)+" + "+short(gap)+" off clock":c.meal?"Lunch "+short(c.meal):gap?"Lunch "+short(gap)+" (off clock)":"No lunch"}</span>`:"";
   return `<td class="${open?"open":""}">${span}${lunch}${tagHtml(c,false)}${c.hw||c.start?`<span class="tot bottom">${c.live?"~":""}${fmt(c.hw)}${c.live?'<span class="livetag">live</span>':""}</span>`:""}</td>`;
@@ -523,7 +525,7 @@ function render(){
     const pct=Math.min(100,p.total/2400*100), cls=p.total>=2400?"over":p.total>=2160?"near":"";
     const left=p.total>=2400?`${fmt(p.total-2400)} over 40`:`${fmt(2400-p.total)} to 40`;
     const sub=p.unit&&p.unit!==p.dept?p.unit:p.dept;
-    return `<tr><td><span class="name">${esc(p.name)}</span>${p.open?'<span class="flag">Clocked in</span>':(live.known&&p.days[v.liveDay]&&(p.days[v.liveDay].hw||p.days[v.liveDay].start)?((()=>{ const c=p.days[v.liveDay]; return v.liveDay===todayKey&&live.detail&&c.src==="detail"&&c.end&&tmin(c.end)>=LUNCH_FROM&&tmin(c.end)<=LUNCH_TO; })()?'<span class="flag lunch">Out – lunch?</span>':'<span class="flag out">Clocked out</span>'):"")}<span class="dept">${esc(sub)}</span></td>${cells}<td class="total ${cls}">${p.live?"~":""}${fmt(p.total)}<span class="to40">${left}</span><span class="bar"><i style="width:${pct}%"></i></span></td>${hasDetail?offCell(p.vac,p.bvac)+offCell(p.nonpto,p.bnonpto)+offCell(p.hol,p.bhol):""}</tr>`;
+    return `<tr><td><span class="name">${esc(p.name)}</span>${p.open?'<span class="flag">Clocked in</span>':(live.known&&p.days[v.liveDay]&&(p.days[v.liveDay].hw||p.days[v.liveDay].start)&&!((p.days[v.liveDay].vac||p.days[v.liveDay].hol)&&p.days[v.liveDay].hw<=(p.days[v.liveDay].vac||0)+(p.days[v.liveDay].hol||0)+1)?((()=>{ const c=p.days[v.liveDay]; return v.liveDay===todayKey&&live.detail&&c.src==="detail"&&c.end&&tmin(c.end)>=LUNCH_FROM&&tmin(c.end)<=LUNCH_TO; })()?'<span class="flag lunch">Out – lunch?</span>':'<span class="flag out">Clocked out</span>'):"")}<span class="dept">${esc(sub)}</span></td>${cells}<td class="total ${cls}">${p.live?"~":""}${fmt(p.total)}<span class="to40">${left}</span><span class="bar"><i style="width:${pct}%"></i></span></td>${hasDetail?offCell(p.vac,p.bvac)+offCell(p.nonpto,p.bnonpto)+offCell(p.hol,p.bhol):""}</tr>`;
   }).join("");
 }
 
