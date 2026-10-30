@@ -207,7 +207,7 @@ td.total .bar{margin-left:auto;margin-right:auto;max-width:90px}
     </table>
   </div>
 
-  <p class="foot">Daily totals update automatically 15 and 45 minutes after each ServiceTitan Timesheet Report (8 AM, 10, 12, 2, 4, 6 and 10 PM); anyone whose hours went up since the previous run shows as clocked in. Start, end, lunch and time off come from the Technician Timesheet Summary: run it for all employees in ServiceTitan, export to Excel, and use <b>Import timesheet</b>. Each day shows whichever report is newest. Morning Non-PTO blocks of 90 minutes or less (the hold before an on-call tech's day starts, including after they clock in early) are the on-call holds dispatch adds so Scheduling Pro skips on-call techs until 9 AM; they show as "On call" and don't count as time off. Anyone who clocks out between 11:30 AM and 1:00 PM shows "Out – lunch?" until the next report; time off the clock between start and end shows as lunch. Other Non-PTO, like leaving early for an appointment, counts as Non-PTO. Totals count paid hours, vacation included; booked time later in the week is shown but not counted until it happens.</p>
+  <p class="foot">Daily totals update automatically 15 and 45 minutes after each ServiceTitan Timesheet Report (8 AM, 10, 12, 2, 4, 6 and 10 PM); anyone whose hours went up since the previous run shows as clocked in. Start, end, lunch and time off come from the Technician Timesheet Summary: run it for all employees in ServiceTitan, export to Excel, and use <b>Import timesheet</b>. Each day shows whichever report is newest. On-call days come from the 7:30–9:00 hold dispatch books ahead of time (seen in an import before that day); one per department per day are the on-call holds dispatch adds so Scheduling Pro skips on-call techs until 9 AM; they show as "On call" and don't count as time off. Anyone who clocks out between 11:30 AM and 1:00 PM shows "Out – lunch?" until the next report; time off the clock between start and end shows as lunch. Other Non-PTO, like leaving early for an appointment, counts as Non-PTO. Totals count paid hours, vacation included; booked time later in the week is shown but not counted until it happens.</p>
 </div>
 
 <div class="modalbg" id="modal" hidden>
@@ -254,17 +254,27 @@ function deptOf(...vals){
 }
 // On-call holds: dispatch puts a short Non-PTO block (7:30-9:00) on on-call techs so Scheduling Pro skips them until 9. Treat 90 min or less as on call, not time off.
 const ONCALL_MAX=90;
-// Morning on-call hold: a short Non-PTO block (90 min or less) sitting before the tech's day starts.
-// Before clock-in it shows with no start and ends by 9:00. Once they clock in early, ServiceTitan trims it to the
-// time before their clock-in, so it still fits in the morning: clock-in minus the Non-PTO lands at 6:45 or later.
-// Non-PTO that doesn't fit before the clock-in (e.g. leaving early for an appointment) stays Non-PTO.
-// A day that was ever booked as an on-call hold in any import this week stays on call.
+// On call comes from the board: dispatch books the on-call tech's 7:30-9:00 hold ahead of time, so an import taken
+// before that day shows it as a booked Non-PTO block (90 min or less, no clock-in, ending by 9:00). Those days are on call
+// for the rest of the week, however ServiceTitan trims the hold once the tech clocks in.
+// Only for days no import saw ahead of time does the page fall back to the morning-fit guess, and then at most one
+// person per department per day (there is only one on-call tech per department).
 let onCallSeen=new Set();
-function onCall(r){ if(!(r.nonpto>0&&r.nonpto<=ONCALL_MAX)) return false;
-  if(onCallSeen.has(r.name+"|"+r.date)) return true;
+function onCall(r){ return onCallSeen.has(r.name+"|"+r.date); }
+function morningFit(r){ if(!(r.nonpto>0&&r.nonpto<=ONCALL_MAX)) return false;
   if(!r.start) return !!r.end&&tmin(r.end)<=9*60;
   const s=tmin(r.start); return s<=10*60&&s-r.nonpto>=6*60+45; }
-function np(r){ return onCall(r)?0:r.nonpto; }
+function buildOnCall(details,deptOfName){
+  onCallSeen=new Set(); const seenAhead=new Set();
+  details.forEach(s=>s.rows.forEach(r=>{ if(r.date>s.run_date) seenAhead.add(r.date);
+    if(r.date>s.run_date&&r.nonpto>0&&r.nonpto<=ONCALL_MAX&&!r.start&&r.end&&tmin(r.end)<=9*60) onCallSeen.add(r.name+"|"+r.date); }));
+  const latest=details.slice().sort((a,b)=>b.captured_at.localeCompare(a.captured_at))[0]; if(!latest) return;
+  const taken=new Set([...onCallSeen].map(k=>{ const [n,d]=k.split("|"); return deptOfName(n)+"|"+d; }));
+  const cand={};
+  latest.rows.filter(r=>!seenAhead.has(r.date)&&morningFit(r)).forEach(r=>{ const k=deptOfName(r.name)+"|"+r.date; if(taken.has(k)) return; (cand[k]=cand[k]||[]).push(r); });
+  Object.values(cand).forEach(list=>{ list.sort((a,b)=>b.nonpto-a.nonpto); onCallSeen.add(list[0].name+"|"+list[0].date); });
+}
+function np(r){ return onCall(r)&&r.nonpto<=ONCALL_MAX?0:r.nonpto; }
 // Time off the clock between start and end that isn't a logged meal (e.g. clocked out for lunch). Only on plain work days.
 function offClock(c){ if(!c.start||!c.end||c.vac||c.nonpto||c.hol) return 0; const g=tmin(c.end)-tmin(c.start)-(c.baseHw??c.hw)-c.meal; return g>=10?g:0; }
 const LUNCH_FROM=11*60+30, LUNCH_TO=13*60; // clock-outs in this window today read as "Out – lunch?"
@@ -400,9 +410,9 @@ function buildView(){
   const byDay={};
   pool.filter(s=>s.kind!=="detail"&&s.range_start===s.range_end&&keys.includes(s.range_start)).sort((a,b)=>b.captured_at.localeCompare(a.captured_at)).forEach(s=>(byDay[s.range_start]=byDay[s.range_start]||[]).push(s));
   const D=pool.filter(s=>s.kind==="detail").sort((a,b)=>b.captured_at.localeCompare(a.captured_at))[0]||null;
-  onCallSeen=new Set(); pool.filter(s=>s.kind==="detail").forEach(s=>s.rows.forEach(r=>{ if(r.nonpto>0&&r.nonpto<=ONCALL_MAX&&!r.start&&r.end&&tmin(r.end)<=9*60) onCallSeen.add(r.name+"|"+r.date); }));
   const dTime=D&&D.run_time?etToMs(D.run_date,D.run_time):(D?new Date(D.captured_at).getTime():0);
   const dm=deptMap(), people=new Map();
+  buildOnCall(pool.filter(s=>s.kind==="detail"),n=>{ const k=dm.get(n); return k?pageDept(k.dept,k.unit,k.team):"Office"; });
   const touch=(name,id,unit,dpt,team)=>{ if(!people.has(name)){ const k=dm.get(name)||(id&&dm.get("#"+id));
       people.set(name,{name,dept:pageDept(dpt||k?.dept,unit||k?.unit,team||k?.team),unit:unit||k?.unit||"",days:{},total:0,open:false,vac:0,nonpto:0,hol:0,bvac:0,bnonpto:0,bhol:0}); } return people.get(name); };
   const src={};
