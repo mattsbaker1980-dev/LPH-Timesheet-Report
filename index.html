@@ -235,6 +235,10 @@ td.total .bar{margin-left:auto;margin-right:auto;max-width:90px}
 const REPO="mattsbaker1980-dev/LPH-Timesheet-Report", BRANCH="main";
 const DAYS=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
 const DEPTS=["Plumbing","Sewer","Electrical","HVAC Install","HVAC Service"];
+// People no longer with LPH: hidden starting with the week (Monday) given. Matches first name + last initial.
+const REMOVED=[{first:"Mason",last:"K",from:"2026-11-02"},{first:"Mike",last:"D",from:"2026-11-09"}];
+const isRemoved=(name,monday)=>{ const w=String(name).trim().split(/\s+/), fi=(w[0]||"").toLowerCase(), li=(w[w.length-1]||"").charAt(0).toLowerCase();
+  return w.length>1&&REMOVED.some(r=>monday>=r.from&&r.first.toLowerCase()===fi&&r.last.toLowerCase()===li); };
 const $=id=>document.getElementById(id);
 let weeks=[], weekIdx=-1, cache={}, dept="All", liveOnly=false, pending=null, sortKey="name", sortDir=1;
 
@@ -490,7 +494,7 @@ function render(){
   if(!v){ th.innerHTML=""; tb.innerHTML=`<tr><td colspan="12" class="emptystate">Loading hours…</td></tr>`; return; }
   const {days,keys,live,hasDetail}=v, todayKey=iso(new Date()), f=d=>d.toLocaleDateString(undefined,{month:"short",day:"numeric"});
   $("sub").textContent=`Week of Mon ${f(days[0])} – Sun ${f(days[6])}, ${days[6].getFullYear()}`+(v.newest?` · updated ${timeLabel(v.newest.captured_at)}`:"");
-  const all=v.people, depts=[...DEPTS]; ["Office","Warehouse"].forEach(x=>{ if(all.some(p=>p.dept===x)) depts.push(x); });
+  const all=v.people.filter(p=>!isRemoved(p.name,iso(days[0]))), depts=[...DEPTS]; ["Office","Warehouse"].forEach(x=>{ if(all.some(p=>p.dept===x)) depts.push(x); });
   if(!["All",...depts].includes(dept)) dept="All";
   const chips=$("chips"); chips.innerHTML='<span class="lbl">Department</span>';
   ["All",...depts].forEach(d=>{ const b=document.createElement("button"); b.className="chip"; b.type="button"; b.setAttribute("aria-pressed",String(d===dept)); b.textContent=d; b.onclick=()=>{dept=d;render();}; chips.appendChild(b); });
