@@ -446,6 +446,8 @@ function buildView(){
     const obs=(byDay[liveDay]||[]).map(s=>({t:new Date(s.captured_at).getTime(),kind:"daily",mins:new Map(s.employees.map(e=>[e.name,e.min]))}));
     if(D&&D.run_date===liveDay) obs.push({t:dTime,kind:"detail",mins:new Map(D.rows.filter(r=>r.date===liveDay).map(r=>[r.name,r.hw]))});
     obs.sort((a,b)=>b.t-a.t);
+    // an import taken within 10 minutes of the newest scheduled report wins: it has exact punch times (same-minute ties used to blank the status)
+    const di=obs.findIndex(o=>o.kind==="detail"); if(di>0&&obs[0].t-obs[di].t<=10*60000) obs.unshift(obs.splice(di,1)[0]);
     const [o1,o0]=obs, lbl=t=>new Date(t).toLocaleTimeString(undefined,{hour:"numeric",minute:"2-digit"});
     if(o1&&o1.kind==="detail"&&D.run_time){
       live={known:true,label:t12(D.run_time),from:o1.t,detail:true};
