@@ -96,16 +96,26 @@ def parse_detail(wb,captured_iso,source):
     dates=sorted(x["date"] for x in out)
     return dict(kind="detail",captured_at=captured_iso,run_date=run_date,run_time=run_time,range_start=dates[0],range_end=dates[-1],source=source,rows=out)
 out=sys.argv[1]; os.makedirs(out,exist_ok=True)
-for f in sys.argv[2:]:
-    d=json.load(open(f)); raw=d["raw"]
+def inputs(arg):
+    # Direct attachment from download_gmail_attachment: "<path>::<filename>::<email internalDate ms or ISO date>"
+    parts=arg.split("::")
+    if len(parts)>=3 and open(parts[0],"rb").read(2)==b"PK":
+        when=parts[2].strip()
+        ms=int(when) if when.isdigit() else int(datetime.datetime.fromisoformat(when.replace("Z","+00:00")).timestamp()*1000)
+        return ms,[(parts[1],open(parts[0],"rb").read())]
+    d=json.load(open(parts[0]))
+    if isinstance(d,list) and d and isinstance(d[0],dict) and "text" in d[0]: d=json.loads(d[0]["text"])
+    raw=d["raw"]
     m=email.message_from_bytes(base64.urlsafe_b64decode(raw+"="*(-len(raw)%4)))
+    return int(d["internalDate"]),[(p.get_filename(),p.get_payload(decode=True)) for p in m.walk() if p.get_filename()]
+for f in sys.argv[2:]:
+    ms,atts=inputs(f)
     # report time, rounded to the minute so duplicate copies of one email collapse
-    t=datetime.datetime.fromtimestamp(int(d["internalDate"])/1000,datetime.timezone.utc).replace(second=0,microsecond=0)
+    t=datetime.datetime.fromtimestamp(ms/1000,datetime.timezone.utc).replace(second=0,microsecond=0)
     cap=t.strftime("%Y-%m-%dT%H:%M:00.000Z"); stamp=cap.replace(":","-").replace(".","-")
-    for p in m.walk():
-        fn=p.get_filename()
+    for fn,payload in atts:
         if not (fn and fn.lower().endswith(".xlsx")): continue
-        wb=openpyxl.load_workbook(io.BytesIO(p.get_payload(decode=True)),data_only=True)
+        wb=openpyxl.load_workbook(io.BytesIO(payload),data_only=True)
         rows=list(wb.worksheets[0].iter_rows(values_only=True))
         s=parse_detail(wb,cap,fn) or parse_daily(wb,rows,cap,fn)
         if not s: print("SKIP unrecognized attachment",fn); continue
